@@ -1,2 +1,2 @@
 # animal_crossing_data_analysis
-White turnips are a unique type of flora present in every Animal Crossing series game to date. In this project, we study and report on this dataset. 
+White turnips are a unique type of flora present in every Animal Crossing series game to date. In this project, we study and report on this dataset. The report addresses 10 questions that include visualizing the data, cleaning the data, performing exploratory data analysis, finding patterns, performing statistical analyses, and making predictions of future turnip sales.
