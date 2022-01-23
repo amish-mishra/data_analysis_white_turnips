@@ -1,0 +1,294 @@
+---
+title: "Final Project"
+author: "Amish Mishra"
+date: "December 13, 2020"
+output: pdf_document
+---
+
+## Bonus Credit
+If you can generate the data set into the data structure such as mpg, diamonds or flights as we used for this course (Not covered in the lecture but you can learn how to do this from textbook R for Data Science) and generate all of your results using ggplot function. You will get 20% bonus of your grade for your final project. *Please provide R code before the first question.*
+
+
+``` {r}
+# install.packages("readxl")
+library(tidyverse)
+library(readxl)
+library(ggpubr)
+library(TSA)
+
+turnip_df <- (read_excel("./turnip_price.xlsx"))
+turnip_df$day <- rep(c("Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"),nrow(turnip_df)/7)
+turnip_df$day_idx <- rep(seq(0,6),nrow(turnip_df)/7) # Index of Sunday is 0, Monday is 1, etc.
+turnip_df <- turnip_df[, c(1,5,6,2,3,4)] # Reorder columns
+head(turnip_df) # Show portion of new data frame
+```
+
+## Questions
+1. Please find a good way to visualize this data set in order to present better description of this data set using figures.
+
+The method we will use is data transformation to add columns to our data frame such as `day`. Then, we use the visualization techniques of `ggplot` to visualize the data by boxplots and scatter-plots. This is an appropriate way to answer this question because grouping and graphing the data by day makes it much easier to see patterns across multiple weeks.
+``` {r}
+# Plots
+ggplot(turnip_df, aes(x=day, y=sell_price_morning))+
+  geom_boxplot()+
+  ggtitle("Morning sell price boxplot by day")
+ggplot(turnip_df, aes(x=date, y=sell_price_morning, color = day))+
+  geom_point()+
+  ggtitle("Morning sell price vs. date")
+ggplot(turnip_df, aes(x=day, y=sell_price_afternoon))+
+  geom_boxplot()+
+  ggtitle("Afternoon sell price boxplot by day")
+ggplot(turnip_df, aes(x=date, y=sell_price_afternoon, color = day))+
+  geom_point()+
+  ggtitle("Afternoon sell price vs. date")
+```
+We see the plots above show some interesting features about the data. For example, the `Morning sell price vs date` graph clearly shows that Wednesdays were high selling price days for the afternoon. Although we would have to do further analysis, from the visual we conclude that the morning selling price of turnips on Wednesdays is generally higher than other days of the week for the mornings.
+
+2. Based on all buying price from the data set, can you estimate mean and the range of the white turnip buying price?
+
+We answer this question by piping the data frame to the `summarise` function, which is able to compute the mean of a given column of the data set. In this case, we have the mean and range of the `buy_price` column with the missing values ignored from the calculation. This is the most appropriate method because the question asks for an estimate of the mean and range of a column of data and the `summarise` function has tools built into it to do specifically that. We remove missing values because most of the missing values are there because those rows are not Sundays (the day when turnips can be bought).
+``` {r}
+turnip_df %>% summarise(mean(buy_price, na.rm = TRUE))
+turnip_df %>% summarise(range(buy_price, na.rm = TRUE))
+```
+We find that the mean of the `buy_price` column is `98.9` and the range is from `90` to `110`. This means that the average buying price of turnip over the time period the data was collected was about `98.9` with the lowest price being `90` and the highest being `110`.
+
+3. Based on all selling price from the data set, can you estimate mean and the range of the white turnip selling price?
+
+First, we do some data transformations to make a new data frame `combined_sell_price` that has all of the selling prices (morning and afternoon) stacked into one column. We also track which price was taken from the morning and which from the afternoon in a second column.
+We answer this question by piping the data frame to the `summarise` function, which is able to compute the mean of a given column of the data set. In this case, we have the mean and range of the `sell_price` column with the missing values ignored from the calculation. This is the most appropriate method because the question asks for an estimate of the mean and range of a column of data and the `summarise` function has tools built into it to do specifically that. We remove missing values because most of the missing values are there because those rows are Sundays (not the day when turnips can be sold).
+``` {r}
+# Make one column of all selling prices
+temp_df <- turnip_df %>% 
+  select(sell_price_morning) %>% 
+  bind_rows(
+    turnip_df %>% 
+      transmute(sell_price_morning = sell_price_afternoon)
+  )
+combined_sell_price = rename(temp_df, sell_price = sell_price_morning)
+combined_sell_price$morn_aft <- rep(c("morning","afternoon"), each = 84)
+head(combined_sell_price)
+combined_sell_price %>% summarise(mean(sell_price, na.rm = TRUE))
+combined_sell_price %>% summarise(range(sell_price, na.rm = TRUE))
+```
+We find that the mean of the `sell_price` column is `98.4` and the range is from `40` to `534`. This means that the average selling price of turnip over the time period the data was collected was about `98.4` with the lowest price being `40` and the highest being `534`.
+
+
+4. Will the white turnip selling price in the afternoon be significantly higher than the price in the morning?
+
+We first justify why we choose to use a 2-sample $t$-test rather than a paired $t$-test. There is no a priori reason to assume that the prices in the afternoon of a given day are affected by the price in the morning. So, we assume that the two columns are independent. Now, we perform a 2-sample $t$-test with the null hypothesis that the mean of the selling price in the morning ($\mu_m$) and the mean of the selling price in the afternoon ($\mu_a$) are the same. The alternative hypothesis will be that the mean of the selling price in the afternoon is higher than the mean of the selling price in the morning. Our significance level will be `0.05`. These are summarized in the equations below:
+$$H_0: \mu_a = \mu_m$$
+$$H_a: \mu_a > \mu_m.$$
+We check the normality and equal variance assumptions of the t-test below.
+
+``` {r}
+ggplot(combined_sell_price, aes(x=morn_aft, y=sell_price)) + 
+  geom_boxplot()
+ggqqplot(turnip_df$sell_price_morning)
+ggqqplot(turnip_df$sell_price_afternoon)
+```
+We find from the boxplot that there are many outliers in the dataset, but the vertical thickness of the boxes suggests that the variance of the two data columns are similar. With the exception of a handful of points from the afternoon price normality plot, both normal probability plots remain close to linearity. This suggests that the distributions of the both columns of data are decently normal. Hence, we will move forward with the $t$-test with caution. We will also perform the Wilcoxon Mann-Whitney test which is not affected by the outliers and does not assume the normality of the input data. This is also an appropriate test because we have 2 samples and do not wish to assume much about the nature of the distribution they are taken from.
+
+``` {r}
+t.test(data = combined_sell_price, sell_price ~ morn_aft, var.equal = TRUE, alternative = "less")
+wilcox.test(data = combined_sell_price, sell_price ~ morn_aft, var.equal = TRUE,conf.int = TRUE)
+```
+
+We find the results that the p-value of the $t$-test came out as `0.084` and the p-value of the Wilcoxon Mann-Whitney came out as `0.40`. Since the p-values in both tests came out to be larger than `0.05` (our significance level), we conclude that we fail to reject the null hypothesis ($H_0$). Hence, the sample of data we have does not provide sufficient evidence to conclude that the selling price of white turnips in the afternoon will be significantly greater than that of the turnips in the morning.
+
+5. The white turnip selling prices on 5/1 is missing, this is because the stalk-market will be closed for upgrading one day if the player play this game and open the market for 30 days. So selling price for upgrading is unavailable for one day. Can you find a way to impute reasonable number for the missing selling prices for morning and afternoon?
+
+We perform some Exploratory Data Analysis (EDA) to see if we can inform a reasonable estimate by the data itself. This is an appropriate method because we are trying to impute information from the data, so we are required to begin with exploring the data itself. We start by first noting that 5/1 is a Friday. Now, we can plot all of the Friday turnip selling prices on a graph and look for patterns.
+
+``` {r}
+friday_df <- filter(turnip_df, day == "Fri")
+ggplot(friday_df, aes(x=date, y=sell_price_morning))+
+  geom_point()+
+   geom_smooth(method='lm', formula= y~x)+
+  ggtitle("Friday morning sell price vs. date")
+
+ggplot(friday_df, aes(x=date, y=sell_price_afternoon))+
+  geom_point()+
+   geom_smooth(method='lm', formula= y~x)+
+  ggtitle("Friday afternoon sell price vs. date")
+```
+
+Unfortunately, the plots do not show any sort of significant trend. Hence, we decide that an accessible and reasonable way to impute a number for the morning and the afternoon selling price for 5/1 is to place the average of the morning prices for the morning sell price of 5/1 and similarly for the afternoon. This is reasonable because we do not know presumptuously if the prices around a given day affect the prices on that day. Hence, we will proceed with caution and use the conservative method of imputing the morning/afternoon selling prices from the means of their respective data sets.
+
+``` {r}
+turnip_df %>% summarise(mean(sell_price_morning, na.rm = TRUE))
+turnip_df %>% summarise(mean(sell_price_afternoon, na.rm = TRUE))
+```
+We find that the mean of the morning selling prices of the turnips is `106.9` and the mean of the afternoon selling prices is `89.9`. Hence, we suggest that the morning selling price of turnips on 5/1 ought to be `106.9` and in the afternoon be `89.9`.
+<!--Could try KNN if there's time.-->
+
+6. From the game rule of introduction, we know that white turnips must be sold within a week, otherwise they will rot by the following Sunday. So that means the buying price will only affected by the selling price for the following 6 days. Based on the data set we have, what is the probability the player will earn money for buying the white turnip in this game? Please describe your way in detail to answer this question and showing your result using table or figure to support your finding.
+
+We begin by first doing some data transformations to extract some needed information. We calculate a column of profit for selling the turnips in the morning of a given day of a given week and a column for the afternoon profits. This is made by subtracting the selling price for the morning/afternoon from the buying price at the beginning of the week.
+
+``` {r}
+temp_df <- turnip_df
+sun_df <- filter(temp_df, day == "Sun")
+buy_price_vec <- pull(sun_df, buy_price)
+temp_df$buy_price <- rep(buy_price_vec, each = 7)
+
+temp_df <- temp_df %>%
+  mutate(
+    profit_morning = sell_price_morning - buy_price,
+    profit_afternoon = sell_price_afternoon - buy_price
+  )
+turnip_df$profit_morning <- temp_df$profit_morning
+turnip_df$profit_afternoon <- temp_df$profit_afternoon
+head(turnip_df)
+```
+
+Now, the method we use is by constructing a table of how many profits were positive overall and how many were negative overall. By overall, we mean the number of positive profits total from the morning and the afternoon profit columns. This method is appropriate because it captures the number of positive profit sales, which can be used to find the proportion of positive profits. This would give us a statistic of what chance a user has of making a positive profit on a given sale playing this game. In the table, the `-1` column is a negative profit (a loss of money) and `1` is a positive profit column (made money on the sale).
+``` {r}
+neg_pos_morning <- table(sign(turnip_df$profit_morning))
+neg_pos_afternoon <- table(sign(turnip_df$profit_afternoon))
+neg_pos_sum <- neg_pos_morning + neg_pos_afternoon
+neg_pos_sum
+(percent_prop <- neg_pos_sum[2]/(neg_pos_sum[1]+neg_pos_sum[2]))
+```
+Lastly, we extract the proportion of positive profits from the total number of times a sale was made (sum of the number of morning and evening profits). This proportion comes out at `0.345`. So, we have found that there is a 34.5% chance of making a profit playing this game, based on the data provided.
+
+
+7. If we call the buying price on Sunday and all the following selling prices from Monday through Saturday a period, Is there any specific pattern for selling price for all periods? If there exist patterns, then how many? (If you google the white turnip for this game, it is not hard to find the answer, and I can tell you there are four patterns for selling price, but you have to use your own way to find patterns).
+
+We first begin by constructing a new data frame named `flat_sell_price` which captures the selling prices all into one column and then another column captures the time of day the price was put. An integer time corresponds to the selling price being from the morning column and a half-integer time corresponds to the selling price being from the afternoon column. Another column named `period` captures the 12 weeks the data was taken. Our method is to use `ggplot` with `facet_wrap` to visualize the data. This is appropriate because we wish to see the selling price vary as $y$-variable on a plot against the time during the week. Further, we wish to compare the different periods (weeks) with one another to compare any pattern in selling prices that we may find.
+``` {r}
+flat_sell_price <- data.frame(sell_price = as.vector(t(select(turnip_df, sell_price_morning, sell_price_afternoon))))
+flat_sell_price$period <- rep(seq(1,12), each = 14)
+flat_sell_price$time <- rep(seq(0,6.5,0.5), 12)
+head(flat_sell_price)
+
+ggplot(data = flat_sell_price, mapping = aes(x = time, y = sell_price))+
+  geom_point()+
+  facet_wrap(~ period)
+```
+From the following plots, we see that there are 4 patterns we can identify across the 12 weeks.
+
+* Spike: demonstrated in periods 1,5,9, and 12
+* Small Spike: demonstrated in periods 10 and 7
+* Steady Decrease: demonstrated in periods 2, 4, and 8
+* Random: demonstrated in periods 6, 3, and 11.
+
+We define "Small Spikes" as periods where the selling price has general increase and then a decrease to it. Period 11 would not qualify as such since the points rise up, then down, then up, then down, and then up towards the end. We describe this sort of period as "Random". "Spike" and "Stead Decrease" should be visually clear from the output.
+
+
+8. Now we know there are four different patterns for selling prices every week, will the specific pattern for this week affect the probability of certain patterns for the following week? For example, if this week happens with pattern number 1, what is the probability of the other three patterns next week. Please answer this question by using the results (patterns) from previous question and use as underlying patterns.
+
+We make a data frame to track which pattern is followed by what other pattern. In the following data frame, for a given column, the row represents how many times the row name pattern came after the column name pattern. For example, in the "Decrease" column, the 2 represents the fact that a "Decrease" pattern was followed by a "Spike" pattern 2 times in the given data set periods.
+``` {r}
+(patterns_df <- data.frame(Spike = c(0,1,1,1), 
+                          Small_Spike = c(0,0,1,1),
+                          Decrease = c(2, 0, 0, 1),
+                          Random = c(1, 1, 1, 0),
+                          row.names = c("Spike", "Small_Spike", "Decrease", "Random")))
+```
+From this data, now we calculate the probabilities by dividing each column by the sum of the numbers of that column. This method is appropriate because this gives us the proportion of times pattern $X$ was followed by pattern $Y$ out of the total number of patterns that followed pattern $X$.
+
+``` {r}
+pattern_prob <- patterns_df
+pattern_prob <- patterns_df %>%
+  mutate(Spike = Spike/sum(Spike),
+         Small_Spike = Small_Spike/sum(Small_Spike),
+         Decrease = Decrease/sum(Decrease),
+         Random = Random/sum(Random))
+rownames(pattern_prob) = c("Spike", "Small_Spike", "Decrease", "Random")
+pattern_prob
+```
+Now, we have a probability table. To demonstrate how to read it, let's take for example that the current week exhibited a "Decrease" pattern in its turnip selling prices. We guess that the following week has a `2` in `3` chance of being a "Spike" and a `1` in `3` chance of being a "Random". To summarize, an entry of the table represents the proportion/chance the column-name pattern will be followed by the row-name pattern.
+
+
+9. Will certain days for selling price from Monday to Saturday are tend to be higher or lower than all the other days? (For example, the selling price for all Monday from the data set are significantly lower than the selling price in other days, or the selling price for all Thursday are significantly higher than the selling price in other days). Please investigate the hypothesis and show your finding.
+
+We first do a box plot of the selling prices grouped by the day of the week they occurred. We also run a non-parametric Kruskal-Wallis test because we don't have a guarantee that the samples for each day are independent of one another. Hence, a non-parametric test is appropriate and advisable. Further, we are comparing more than 2 groups' means. Our null hypothesis is that there is no difference in the mean selling price across the 6 days Monday through Saturday data we have and the alternative hypothesis is that there is a difference. Our significance level is `0.05`. We write $\mu_i$ for the $i^{th}$ day of the week where $i=1$ is Monday.
+$$H_0: \mu_1 = \mu_2=\dots = \mu_6$$
+``` {r}
+flat_sell_price$day <- rep(c("Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"),
+             times = 12,
+             each = 2)
+ggplot(flat_sell_price, mapping = aes(x = day, y = sell_price))+
+  geom_boxplot()
+
+kruskal.test(sell_price ~ day, data = flat_sell_price)
+```
+We can rest assured that Sunday did not skew our test because all of the Sunday sell price rows were `NA`, so they were not accounted for in the test. This is confirmed by the degrees of freedom of the rank-sum test since it should have 1 less degree of freedom than the number of groups. In our case, for 6 valid groups we ought to have 5 degrees of freedom, which is what the test reports above in the output.
+
+After running the test, we find that the p-value of $4.933 \times 10^{-9}$ is far less than the significance level `0.05`, which means that we reject the null hypothesis and conclude that there is a difference in the average selling price of the turnips across varying days of the week. From the box plot, the largest median and outliers appear in the Wednesday group. This suggests that the selling price on Wednesday tend to be higher than the other days. Furthermore, from the boxplot we see that Saturdays tend to be bad days to sell because it has the lowest median selling price.
+
+10. If the goal of this project is to predict the selling price in order to earn a lot of money or not losing any money in this game, can you predict the selling prices from Thursday to Saturday if we already have the buying price on Sunday and all selling prices from Monday to Wednesday? Try to predict the price using two following independent scenarios:
+<!-- Use regression, time series analysis, etc. -->
+
+For this problem, we use a time series analysis approach. We first make a time series by using the methods from this article[^1]. The time series is named `sell_price_time_series`. The time series method is appropriate for this problem because the turnip selling prices occur at different values as time moves forward. Since the event of selling turnips repeats every week, we make the assumption that the prices will exhibit some sort of periodic behavior. We divide each week into `14` points representing Sunday morning, Sunday afternoon, Monday morning, Monday afternoon, etc. After this, we fit a harmonic function to our time series and analyze the output.
+
+[^1]: https://a-little-book-of-r-for-time-series.readthedocs.io/en/latest/src/timeseries.html
+``` {r}
+sell_price_over_time <- flat_sell_price
+sell_price_over_time$time <-seq(0,83.5,0.5)
+
+ggplot(data = sell_price_over_time, mapping = aes(x = time, y = sell_price))+
+  geom_point()
+
+sell_price_time_series <- ts(combined_sell_price$sell_price, frequency = 14)
+plot.ts(sell_price_time_series)
+
+har. = harmonic(sell_price_time_series,6)
+model = lm(sell_price_time_series ~ har.)
+summary(model)
+
+plot(ts(fitted(model),freq = 12),
+     ylab = "Selling Price", type = "l", ylim = c(0,600))
+points(sell_price_time_series)
+```
+The first plot outputted is a scatter plot showing the progression of turnip selling prices as time went by. Our analysis regression output shows an R-squared value of `0.35`. This means that our model fits the data set quite poorly. This is reflected in the visual comparison of the plots. The harmonic fit to the data set neglects to capture the outliers into the model. However, the graph does show that the regression fit to the data is quite close to the selling prices below 300. We can see that in a zoomed in graph below:
+
+```{r}
+plot(ts(fitted(model),freq = 12),
+     ylab = "Selling Price", type = "l")
+points(sell_price_time_series)
+```
+
+Generally speaking, there are spikes where there ought to be spikes and dips where the data selling prices are low. Regardless, we use this model to make a prediction for the following scenarios.
+
+*Note that by the nature of the model we chose, our predictions will not be influenced by the prices on Monday, Tuesday, and Wednesday. Thus, the following two scenarios have the same price predictions because we did not need to use the provided selling price data for the harmonic model we have.*
+
+
+**Scenario 1:** Buying price is 93 on Sunday, and the selling prices are 140 and 127 on Mondays, 183 and 212 on Tuesday and 158 and 83 on Wednesday?
+
+```{r}
+model_prices <- predict(model)
+head(model_prices, 15)
+```
+We see from the values of the model that the series repeats the same sequence `2-14` over and over. This is because `0` and `1` correspond to Sundays and there's no selling price data for that day. Hence, we need to simply look at what numbers correspond with Thursday morning, Thursday afternoon, Friday morning, Friday afternoon, Saturday morning, and Saturday afternoon.
+
+```{r}
+newdata = data.frame("day"=rep(c("Thurs", "Fri", "Sat"), each = 2),
+                     "time_of_day"=rep(c("morning","afternoon"),3),
+                     "time_series_time" = seq(8,13))
+newdata %>% mutate(prediction = model_prices[time_series_time-1])
+```
+Thus, we make the prediction that the prices for the days following Wednesday will be `96, 115, 75, 60, 59, 89`.
+
+Although these predictions are based on a model that made the assumption the prices are periodic generally, we have some reasonable predictions of prices for the following weeks. Based on our predictions, for a buying price of `93`, the player ought to sell the turnips on Thursday morning or afternoon to make positive profit.
+
+**Scenario 2:** Buying price is 107 on Sunday, and the selling price are 104 and 138 on Mondays, 65 and 58 on Tuesday and 109 and 101 on Wednesday? You can rely on some machine learning algorithm or modeling procedure for prediction of the selling prices.
+
+We use the same time series output model for this scenario as well.
+
+```{r}
+model_prices <- predict(model)
+head(model_prices, 15)
+```
+We see from the values of the model that the series repeats the same sequence `2-14` over and over. This is because `0` and `1` correspond to Sundays and there's no selling price data for that day. Hence, we need to simply look at what numbers correspond with Thursday morning, Thursday afternoon, Friday morning, Friday afternoon, Saturday morning, and Saturday afternoon.
+
+```{r}
+newdata = data.frame("day"=rep(c("Thurs", "Fri", "Sat"), each = 2),
+                     "time_of_day"=rep(c("morning","afternoon"),3),
+                     "time_series_time" = seq(8,13))
+newdata %>% mutate(prediction = model_prices[time_series_time-1])
+```
+Thus, we make the prediction that the prices for the days following Wednesday will be `96, 115, 75, 60, 59, 89`.
+
+Although these predictions are based on a model that made the assumption the prices are periodic generally, we have some reasonable predictions of prices for the following weeks. Based on our predictions, for a buying price of `107`, the player ought to sell the turnips on Thursday afternoon to make positive profit.
